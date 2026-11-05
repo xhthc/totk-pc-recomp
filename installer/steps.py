@@ -1,4 +1,4 @@
-"""The eight setup steps of docs/installer.md: check, fonts, extract, lift, compile, prepare, dlss, cleanup.
+"""The setup steps of docs/installer.md: check, fonts, extract, lift, compile, prepare, dlss, xess, cleanup.
 
 Extraction runs in this process through tools/extract.py (the package's sibling tools/, which ships with it); fonts
 runs the vendored extract_shared_fonts.py on the firmware folder; lift, compile and prepare run the bundled Python on
@@ -7,7 +7,7 @@ recomp/gen.py, tools/build_game.py, tools/make_romfs_patches.py and tools/prepar
 with the bundled clang (hostcheck.c).
 
 Install folder: exefs/, romfs/ (romfs.bin, index.json), profile/, shared-fonts/ (Chinese and Korean text), totk.exe
-and its DLLs, nvngx_dlss.dll (with --dlss), romfs-index.bin, romfs-patches/, romfs-patches-xbox/,
+and its DLLs, nvngx_dlss.dll (with --dlss), libxess.dll (with --xess), romfs-index.bin, romfs-patches/, romfs-patches-xbox/,
 romfs-patches-xbox-label/, romfs-patches-pc/, totk_xlate.exe, the
 shader state of totk.exe --prepare-shaders, totk.ini, totk-install.json.
 Temp folder (<temp>/<dest name>-<hash>): check/ (ExeFS of both inputs, the host check), unpacked/ (the NSP of an NSZ
@@ -40,6 +40,7 @@ from .runner import InstallError, Step
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tools'))
 import extract  # noqa: E402
+import fetch_xess  # noqa: E402
 import ncz  # noqa: E402
 import shader_list  # noqa: E402
 from extract_exefs import (common_tickets, container_entries, load_keys, nca_ctr_key, nca_inventory,  # noqa: E402
@@ -1196,7 +1197,49 @@ class Dlss(Step):
         return {'installed': DLSS_VERSION}
 
 
-# ---- 8. clean up
+# ---- 8. Intel XeSS
+
+class Xess(Step):
+    id = 'xess'
+
+    def key(self, ctx):
+        enabled = os.name == 'nt' and getattr(ctx.options, 'xess', False)
+        return fingerprint('xess-1', fetch_xess.COMMIT, fetch_xess.FILES) if enabled else fingerprint('xess-1', 'off')
+
+    def current(self, ctx, record):
+        if record.get('failed'):
+            return False
+        if record.get('kept'):
+            return (ctx.dest / 'libxess.dll').is_file()
+        return not record.get('installed') or all((ctx.dest / name).is_file() for _, name, _ in fetch_xess.FILES)
+
+    def verify(self, ctx, record):
+        if not record.get('installed'):
+            return self.current(ctx, record)
+        try:
+            return all(fetch_xess.sha256(ctx.dest / name) == digest for _, name, digest in fetch_xess.FILES)
+        except OSError:
+            return False
+
+    def run(self, ctx):
+        if os.name != 'nt' or not getattr(ctx.options, 'xess', False):
+            return {}
+        rep = ctx.reporter
+        target = ctx.dest / 'libxess.dll'
+        _, _, expected = next(item for item in fetch_xess.FILES if item[1] == target.name)
+        try:
+            if target.is_file() and fetch_xess.sha256(target) != expected:
+                rep.warning('warn.xess_kept', path=str(target))
+                return {'kept': True}
+            rep.progress('xess', 'install', force=True)
+            fetch_xess.install(ctx.dest, bundle=ctx.layout.root / 'extras' / 'Intel-XeSS', log=rep.log)
+        except (OSError, ValueError, http.client.HTTPException) as e:
+            rep.warning('warn.xess_install_failed', detail=str(e)[:300])
+            return {'failed': True}
+        return {'installed': True}
+
+
+# ---- 9. clean up
 
 class Cleanup(Step):
     id = 'cleanup'
@@ -1264,4 +1307,4 @@ def romfs_problem(romfs, expected):
 
 
 def all_steps():
-    return [Check(), Fonts(), Extract(), Lift(), Compile(), Prepare(), Dlss(), Cleanup()]
+    return [Check(), Fonts(), Extract(), Lift(), Compile(), Prepare(), Dlss(), Xess(), Cleanup()]

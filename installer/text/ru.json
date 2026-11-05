@@ -6,6 +6,7 @@
  "step.compile": "Сборка {game_exe}",
  "step.prepare": "Подготовка шейдеров",
  "step.dlss": "Загрузка NVIDIA DLSS",
+ "step.xess": "Установка Intel XeSS",
  "step.cleanup": "Уборка",
 
  "phase.check.host": "Проверка процессора и видеокарты",
@@ -34,6 +35,7 @@
  "phase.prepare.libraries": "Сборка шейдеров для драйвера видеокарты",
  "phase.prepare.pack": "Упаковка кэша шейдеров в один файл",
  "phase.dlss.download": "Загрузка nvngx_dlss.dll из DLSS SDK от NVIDIA",
+ "phase.xess.install": "Установка libxess.dll и лицензии Intel",
  "phase.cleanup.ini": "Запись totk.ini",
  "phase.cleanup.temp": "Удаление временных файлов",
 
@@ -108,6 +110,8 @@
  "warn.kernel_old": "В Linux {version} нет отслеживания записи, на которое опирается игра (нужна версия 6.7 или новее); игра может работать очень медленно. Обновление системы это исправит.",
  "warn.dlss_kept": "В папке установки уже есть библиотека DLSS ({path}); установка её оставляет.",
  "warn.dlss_download_failed": "Не удалось загрузить NVIDIA DLSS с {url}: {detail}. Игра работает и без него; при следующем запуске установка попробует снова.",
+ "warn.xess_install_failed": "Не удалось установить Intel XeSS: {detail}. Установка игры продолжится. Для повторной попытки запусти установщик снова.",
+ "warn.xess_kept": "В папке установки уже есть библиотека XeSS ({path}). Установщик её сохранит.",
 
  "ui.title": "Установка TotK",
  "ui.rebuild_title": "Пересборка игры под ваши моды",
@@ -131,6 +135,8 @@
  "ui.firmware_help": "Для текста на китайском и корейском: папка Contents/registered прошивки, например из Ryujinx или Yuzu. Установка скопирует из неё системные шрифты Switch в папку установки.",
  "ui.dlss": "Загрузить NVIDIA DLSS (nvngx_dlss.dll) для видеокарт NVIDIA RTX",
  "ui.dlss_help": "Из DLSS SDK от NVIDIA на GitHub, по лицензии NVIDIA RTX SDK (github.com/NVIDIA/DLSS). Без него настройки dlaa и DLSS ничего не делают.",
+ "ui.xess": "Установить Intel XeSS Super Resolution (libxess.dll)",
+ "ui.xess_help": "Установщик возьмёт библиотеку из комплекта или загрузит из SDK Intel. XeSS включается в игре через меню F1.",
  "ui.compressed_help": "Сжатые файлы NSZ и XCZ подходят как есть: установка сама их распакует (для этого, пока извлекаются данные игры, нужно столько свободного места, сколько занимают распакованные файлы).",
  "ui.type_game": "Файлы игры (NSP, XCI, NSZ, XCZ)",
  "ui.type_keys": "Файлы ключей (*.keys)",

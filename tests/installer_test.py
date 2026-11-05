@@ -483,7 +483,7 @@ class FontsTest(unittest.TestCase):
 
     def test_all_steps_order(self):
         self.assertEqual([s.id for s in steps.all_steps()],
-                         ['check', 'fonts', 'extract', 'lift', 'compile', 'prepare', 'dlss', 'cleanup'])
+                         ['check', 'fonts', 'extract', 'lift', 'compile', 'prepare', 'dlss', 'xess', 'cleanup'])
 
     def test_extracts_into_the_install_folder(self):
         self.fake_tool()
@@ -649,6 +649,61 @@ class DlssTest(unittest.TestCase):
         self.ctx.host = {'devices': [{'name': 'AMD Radeon RX 7800 XT', 'api': [1, 3, 0], 'type': 2}]}
         self.assertEqual(steps.Dlss().run(self.ctx), {'skipped': 'no_rtx'})
         self.assertEqual(self.warnings(), [])
+
+
+@unittest.skipUnless(steps.os.name == 'nt', 'XeSS is Windows-only')
+class XessTest(unittest.TestCase):
+    def setUp(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.bundle = root / 'extras' / 'Intel-XeSS'
+        self.bundle.mkdir(parents=True)
+        self.dll = self.bundle / 'libxess.dll'
+        self.dll.write_bytes(b'XeSS fixture')
+        license_file = self.bundle / 'LICENSE.txt'
+        license_file.write_bytes(b'Intel license fixture')
+        self.enterContext(mock.patch.object(steps.fetch_xess, 'FILES', (
+            ('LICENSE.txt', 'licenses/Intel-XeSS-LICENSE.txt', steps.file_sha256(license_file)),
+            ('bin/libxess.dll', 'libxess.dll', steps.file_sha256(self.dll)),
+        )))
+        self.ctx = SimpleNamespace(dest=root / 'game', layout=SimpleNamespace(root=root),
+                                   reporter=Reporter(out=io.StringIO()), options=SimpleNamespace(xess=False))
+        self.target = self.ctx.dest / 'libxess.dll'
+        self.step = steps.Xess()
+
+    def test_checkbox_controls_install_and_resume(self):
+        off = self.step.key(self.ctx)
+        self.assertEqual(self.step.run(self.ctx), {})
+        self.assertFalse(self.target.exists())
+        self.ctx.options.xess = True
+        self.assertNotEqual(off, self.step.key(self.ctx))
+        with mock.patch.object(steps.urllib.request, 'urlopen', side_effect=AssertionError('bundle must work offline')):
+            record = self.step.run(self.ctx)
+        self.assertEqual(record, {'installed': True})
+        self.assertEqual(self.target.read_bytes(), self.dll.read_bytes())
+        self.assertTrue(self.step.verify(self.ctx, record))
+        self.target.unlink()
+        self.assertFalse(self.step.current(self.ctx, record))
+
+    def test_bad_bundle_is_retried_and_existing_dll_is_kept(self):
+        self.ctx.options.xess = True
+        self.dll.write_bytes(b'bad bundle')
+        failed = self.step.run(self.ctx)
+        self.assertEqual(failed, {'failed': True})
+        self.assertFalse(self.step.current(self.ctx, failed))
+        self.assertFalse(self.target.exists())
+        self.target.write_bytes(b'player version')
+        self.assertEqual(self.step.run(self.ctx), {'kept': True})
+        self.assertEqual(self.target.read_bytes(), b'player version')
+
+    def test_download_is_verified_when_bundle_is_missing(self):
+        self.ctx.options.xess = True
+        files = {path.name: path.read_bytes() for path in self.bundle.iterdir()}
+        for path in self.bundle.iterdir():
+            path.unlink()
+        with mock.patch.object(steps.urllib.request, 'urlopen',
+                               side_effect=lambda url, **_: io.BytesIO(files[url.rsplit('/', 1)[-1]])):
+            self.assertEqual(self.step.run(self.ctx), {'installed': True})
+        self.assertEqual(self.target.read_bytes(), files['libxess.dll'])
 
 
 if __name__ == '__main__':

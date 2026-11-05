@@ -24,6 +24,7 @@ The install folder (`main.c` `portable_paths()` reads this layout; it stays port
 <install folder>/
   totk.exe, SDL3.dll, libopus-0.dll, totk_xlate.exe
   nvngx_dlss.dll                 NVIDIA DLSS, downloaded by the setup's DLSS step when the player keeps it ticked
+  libxess.dll, licenses/         Intel XeSS runtime and license, installed when the XeSS box is checked
   totk.ini                       language; the other keys as commented defaults (totk.ini.example)
   exefs/, romfs/                 extracted from the player's files
   shared-fonts/                  the Switch system fonts, with Chinese, Korean or Traditional Chinese text
@@ -83,7 +84,11 @@ loads the saves 1.4.3 wrote.
    the library; NGX loads it from the folder of totk.exe for `dlaa` and the DLSS modes. A DLSS library already in the
    folder (a newer one the player put there) is kept. Without an RTX GPU the step only logs and does nothing; a failed
    download warns, the game runs without DLSS, and the next run of the setup tries again.
-8. **Clean up** the temp folder, except the generated C and the objects (about 1.3 GB), and write
+8. **XeSS** (checked by default in the Windows setup window, or `--xess`): install the Intel SDK's pinned
+   `libxess.dll` and license. Setup uses the bundled files when available and verifies their SHA-256. An existing
+   DLL with a different hash is kept. If this step fails, setup shows a warning and continues. Enable XeSS in F1
+   after launching the game. See [the XeSS test instructions](xess.md).
+9. **Clean up** the temp folder, except the generated C and the objects (about 1.3 GB), and write
    `build-cache/rebuild.txt` in the install folder.
 
 A cancelled or failed setup resumes from the last finished step (`totk-install.json`).
@@ -108,7 +113,7 @@ needs the release folder the setup ran from: a moved or deleted release folder m
 `installer/` (stdlib only; `installer/layout.py` maps the release folder and, in a repository, the dev toolchain):
 
 ```
-python -m installer --base FILE --update FILE --keys FILE --lang CODE --dest DIR [--firmware DIR] [--root DIR] [--temp DIR] [--verify]
+python -m installer --base FILE --update FILE --keys FILE --lang CODE --dest DIR [--firmware DIR] [--root DIR] [--temp DIR] [--verify] [--dlss] [--xess]
 ```
 
 - On a folder with `totk-install.json` only `--dest` is needed; the game files only when the extraction must run again.
