@@ -155,6 +155,11 @@
 # 3D render scale: the scene's size relative to the game resolution, game (5/6, the game's own 1600x900 at 1080p) or
 # a percentage (25 to 400, at most 4096 pixels a side); above 100 supersamples the scene (anti-aliasing). Read at start.
 # render_scale = game
+# Experimental Intel XeSS Super Resolution (Windows): off, native, ultra_quality, quality, balanced or performance.
+# Requires libxess.dll next to totk.exe and the Microsoft VC++ x64 runtime. Overrides render_scale and DLSS while on;
+# the game HUD stays at output_res. Native renders at output_res with temporal anti-aliasing. Restart to apply.
+# Download the runtime with: python tools/fetch_xess.py --dest <folder containing totk.exe>
+# xess = off
 # Scaling to the window when it is larger than the game resolution: fsr (AMD FSR 1) or bilinear, and FSR's sharpening
 # from 0 (off) to 100. Changes while the game runs take effect at once.
 # upscaler = fsr

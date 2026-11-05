@@ -37,6 +37,8 @@ Report problems as issues, following [CONTRIBUTING.md](CONTRIBUTING.md).
   ([docs/mods.md](docs/mods.md))
 - Atmosphère cheats: put a cheat file into a mod and switch its cheats in the menu ([docs/cheats.md](docs/cheats.md))
 
+- Experimental [Intel XeSS Super Resolution on Windows](docs/xess.md)
+
 ## Planned
 
 - VRR

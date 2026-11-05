@@ -140,6 +140,12 @@ static const char *const text_en[UI_TEXT_COUNT] = {
                                   "away. Spreads the shadow map over more ground: raise Shadow resolution with it. "
                                   "Takes effect at the next start.",
     [UI_MENU_DLAA] = "NVIDIA DLSS / DLAA",
+    [UI_MENU_XESS] = "Intel XeSS Super Resolution (experimental)",
+    [UI_MENU_XESS_DESC] = "Temporal anti-aliasing and upscaling for the 3D scene. Requires libxess.dll next to totk.exe "
+                          "and the Microsoft VC++ x64 runtime (Windows). Overrides DLSS and 3D render scale; the HUD "
+                          "keeps its resolution. Native AA is the first-test mode. Restart to apply.",
+    [UI_MENU_XESS_OFF] = "Off", [UI_MENU_XESS_NATIVE] = "Native AA (100%)",
+    [UI_MENU_XESS_ULTRA_QUALITY] = "Ultra Quality",
     [UI_MENU_DLAA_DESC] = "NVIDIA DLSS for the 3D scene (NVIDIA RTX GPUs; " DLSS_FILE " next to " EXE_FILE "): smoother "
                           "edges and less shimmer. The HUD is not touched. The mode below sets the resolution it works "
                           "from. Takes effect after a restart.",
@@ -611,6 +617,12 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
                                   "Карта теней растягивается на большую площадь, поэтому вместе с этим поднимайте "
                                   "разрешение теней. Действует после перезапуска.",
     [UI_MENU_DLAA] = "NVIDIA DLSS / DLAA",
+    [UI_MENU_XESS] = "Intel XeSS Super Resolution (эксперимент)",
+    [UI_MENU_XESS_DESC] = "Временное сглаживание и масштабирование 3D-сцены. Нужны libxess.dll рядом с totk.exe и "
+                          "Microsoft VC++ x64 runtime (Windows). Заменяет DLSS и масштаб 3D-отрисовки; разрешение "
+                          "интерфейса сохраняется. Для первого теста выберите Native AA. Применяется после перезапуска.",
+    [UI_MENU_XESS_OFF] = "Выкл.", [UI_MENU_XESS_NATIVE] = "Native AA (100%)",
+    [UI_MENU_XESS_ULTRA_QUALITY] = "Максимальное качество",
     [UI_MENU_DLAA_DESC] = "NVIDIA DLSS для 3D-сцены (видеокарты NVIDIA RTX; " DLSS_FILE " рядом с " EXE_FILE "): ровнее "
                           "края и меньше мерцания. Интерфейс не затрагивается. Режим ниже задаёт разрешение, с которым он "
                           "работает. Действует после перезапуска.",
@@ -1418,6 +1430,12 @@ static const char *const text_pt_br[UI_TEXT_COUNT] = {
     [UI_MENU_PCSS_DESC] = "Sombras do sol nítidas onde um objeto toca o chão e mais suaves quanto mais longe a sombra "
                           "cai (PCSS). 0 mantém o filtro do jogo. Vale no próximo início.",
     [UI_MENU_DLAA] = "NVIDIA DLSS / DLAA",
+    [UI_MENU_XESS] = "Intel XeSS Super Resolution (experimental)",
+    [UI_MENU_XESS_DESC] = "Antisserrilhamento temporal e ampliação da cena 3D. Requer libxess.dll ao lado de totk.exe e "
+                          "Microsoft VC++ x64 runtime (Windows). Substitui DLSS e a escala 3D, preservando o HUD. "
+                          "Teste primeiro Native AA. Reinicie para aplicar.",
+    [UI_MENU_XESS_OFF] = "Desligado", [UI_MENU_XESS_NATIVE] = "Native AA (100%)",
+    [UI_MENU_XESS_ULTRA_QUALITY] = "Qualidade ultra",
     [UI_MENU_DLAA_DESC] = "NVIDIA DLSS para a cena 3D (placas NVIDIA RTX; nvngx_dlss.dll ao lado do totk.exe): bordas "
                           "mais suaves e menos cintilação. O HUD não é afetado. O modo abaixo define a resolução de "
                           "onde ele parte. Vale após reiniciar.",
@@ -2018,6 +2036,11 @@ static const char *const text_zh_hans[UI_TEXT_COUNT] = {
     [UI_MENU_PCSS] = "柔和阴影",
     [UI_MENU_PCSS_DESC] = "物体接触地面处的太阳阴影锐利，阴影投得越远越柔和（PCSS）。0 保留游戏自身的过滤。下次启动时生效。",
     [UI_MENU_DLAA] = "NVIDIA DLSS / DLAA",
+    [UI_MENU_XESS] = "Intel XeSS Super Resolution（实验性）",
+    [UI_MENU_XESS_DESC] = "3D 场景的时域抗锯齿与超分辨率。需要 Windows、totk.exe 旁的 libxess.dll 和 Microsoft VC++ x64 "
+                          "运行库。覆盖 DLSS 和 3D 渲染比例，保留 HUD 分辨率。首次测试请选择 Native AA。重启后生效。",
+    [UI_MENU_XESS_OFF] = "关闭", [UI_MENU_XESS_NATIVE] = "Native AA（100%）",
+    [UI_MENU_XESS_ULTRA_QUALITY] = "超高质量",
     [UI_MENU_DLAA_DESC] = "用于 3D 场景的 NVIDIA DLSS（NVIDIA RTX 显卡；nvngx_dlss.dll 放在 totk.exe 旁）：边缘更平滑，闪烁更少。HUD "
                           "不受影响。下方的模式决定它的工作分辨率。重启后生效。",
     [UI_MENU_DLSS] = "DLSS 模式",

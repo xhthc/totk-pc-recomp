@@ -11,6 +11,7 @@
 #include "vk.h"
 #include "platform/platform.h"
 #include "vk_dlaa.h"
+#include "vk_xess.h"
 
 static VkCtx g_vk;
 static int g_ready;
@@ -68,7 +69,7 @@ static void mesa_cache_beside_exe(void) {
 
 static int create_instance(void) {
     mesa_cache_beside_exe();
-    const char *ext[12];
+    const char *ext[32];
     uint32_t n_ext = (uint32_t)gfx_window_vk_extensions(ext, 7);
     const char *layers[] = {"VK_LAYER_KHRONOS_validation"};
     int validate = cfg_bool("TOTK_VK_VALIDATION");
@@ -82,11 +83,19 @@ static int create_instance(void) {
     vk_dlaa_instance_exts(ext, &n_ext, 12);
     VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "TotK Recomp",
                              .pEngineName = "TotK Recomp", .apiVersion = VK_API_VERSION_1_3};
+    uint32_t base_ext = n_ext;
+    vk_xess_instance_exts(ext, &n_ext, 32, &app.apiVersion);
     VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app,
                                .enabledExtensionCount = n_ext, .ppEnabledExtensionNames = ext,
                                .enabledLayerCount = validate ? 1 : 0, .ppEnabledLayerNames = layers};
     rdoc_init();
     VkResult r = vkCreateInstance(&ci, NULL, &g_vk.instance);
+    if (r != VK_SUCCESS && (n_ext != base_ext || app.apiVersion != VK_API_VERSION_1_3)) {
+        vk_xess_vulkan_failed("vkCreateInstance", r);
+        ci.enabledExtensionCount = base_ext;
+        app.apiVersion = VK_API_VERSION_1_3;
+        r = vkCreateInstance(&ci, NULL, &g_vk.instance);
+    }
     if (r != VK_SUCCESS) { rt_log("vk: vkCreateInstance failed (%d); is a Vulkan 1.3 driver installed?", (int)r); return 0; }
     g_vk.validation = validate;
     if (validate) {
@@ -224,7 +233,7 @@ static int create_device(void) {
     vkEnumerateDeviceExtensionProperties(g_vk.phys, NULL, &ne, NULL);
     VkExtensionProperties *ep = calloc(ne ? ne : 1, sizeof *ep);
     vkEnumerateDeviceExtensionProperties(g_vk.phys, NULL, &ne, ep);
-    const char *ext[48];
+    const char *ext[96];
     uint32_t n_ext = 0;
     for (size_t i = 0; i < sizeof k_required_ext / sizeof *k_required_ext; i++) ext[n_ext++] = k_required_ext[i];
 
@@ -337,9 +346,22 @@ static int create_device(void) {
                                           .queueFamilyIndex = g_vk.xfer_family, .queueCount = 1, .pQueuePriorities = &prio};
         nqi = 2;
     }
-    VkDeviceCreateInfo di = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = &c->f2, .queueCreateInfoCount = nqi,
+    uint32_t base_ext = n_ext;
+    FeatureChain base_features = *c;
+    void *features = &c->f2;
+    vk_xess_device_exts(g_vk.instance, g_vk.phys, ext, &n_ext, 96);
+    int xess_features = vk_xess_device_features(g_vk.instance, g_vk.phys, &features);
+    if (!xess_features) { *c = base_features; features = &c->f2; n_ext = base_ext; }
+    VkDeviceCreateInfo di = {.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = features, .queueCreateInfoCount = nqi,
                              .pQueueCreateInfos = qi, .enabledExtensionCount = n_ext, .ppEnabledExtensionNames = ext};
     VkResult r = vkCreateDevice(g_vk.phys, &di, NULL, &g_vk.device);
+    if (r != VK_SUCCESS && xess_features) {
+        vk_xess_vulkan_failed("vkCreateDevice", r);
+        *c = base_features;
+        di.pNext = &c->f2;
+        di.enabledExtensionCount = base_ext;
+        r = vkCreateDevice(g_vk.phys, &di, NULL, &g_vk.device);
+    }
     free(c);
     if (r != VK_SUCCESS) { rt_log("vk: vkCreateDevice failed (%d)", (int)r); return 0; }
     vkGetDeviceQueue(g_vk.device, g_vk.gfx_family, 0, &g_vk.gfx_queue);
@@ -375,6 +397,7 @@ static long g_errors_total;     // outlives the device so the probe can print it
 static void destroy_all(void) {
     gfx_window_release_vk();
     if (g_vk.device) vkDeviceWaitIdle(g_vk.device);
+    if (g_vk.device) vk_xess_shutdown();
     if (g_vk.device) vk_astc_release();
     if (g_vk.device) vk_crumbs_release();
     if (g_vk.timeline) vkDestroySemaphore(g_vk.device, g_vk.timeline, NULL);
@@ -397,7 +420,8 @@ int vk_init(void) {
     plat_mutex_lock(&g_lock);
     if (!g_ready) {
         memset(&g_vk, 0, sizeof g_vk);
-        if (create_instance() && pick_device() && create_device()) g_ready = 1, vk_headroom_start(), vk_dlaa_init();
+        if (create_instance() && pick_device() && create_device())
+            g_ready = 1, vk_headroom_start(), vk_dlaa_init(), vk_xess_init();
         else destroy_all();
     }
     int ok = g_ready;

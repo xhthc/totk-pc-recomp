@@ -25,6 +25,7 @@
 #include "platform/platform.h"
 #include "vk.h"
 #include "vk_dlaa.h"
+#include "vk_xess.h"
 #include "vk_exec.h"
 #include "vk_rec.h"
 #include "dlaa_mv_spv.h"
@@ -108,7 +109,7 @@ static int p_getp(const NgxParam *p, const char *n, void **v) { return NGX_OK(((
 // dlaa applies after a restart; switched off, nothing else of DLAA runs.
 int vk_dlaa_wanted(void) {
     static int wanted = -1;
-    if (wanted < 0) wanted = cfg_bool("TOTK_DLAA");
+    if (wanted < 0) wanted = cfg_bool("TOTK_DLAA") && !vk_xess_wanted();
     return wanted;
 }
 
@@ -263,7 +264,7 @@ void vk_dlaa_init(void) {
            driver ? "; the driver needs an update" : "");
 }
 
-int vk_dlaa_available(void) { return vk_dlaa_wanted() && N.available; }
+int vk_dlaa_available(void) { return vk_xess_available() || (vk_dlaa_wanted() && N.available); }
 
 // ---------------------------------------------------------------- where DLAA runs in TotK's frame
 // Measured (TOTK_DUMP, frame 2100 at Lookout Landing, 2560x1440 scene): the G-buffer passes draw into five targets with
@@ -341,11 +342,12 @@ static struct {
 const VkTexImage *vk_dlaa_swap_img;
 VkImageView vk_dlaa_swap_view;
 
-static int dl_active(void) { return N.available && !D.failed && D.on; }
+static int dl_active(void) { return vk_dlaa_available() && !D.failed && D.on; }
 
 static void dl_fail(const char *what, NgxResult r) {
     rt_log("dlaa: %s failed (%08x): DLAA off for this run", what, (unsigned)r);
     D.failed = 1;
+    D.jit_ok = 0;   // an SDK failure must not leave unresolved jitter on subsequent frames
 }
 
 static int image2d(uint32_t w, uint32_t h, VkFormat f, VkImageUsageFlags usage, VkImage *img, VmaAllocation *mem,
@@ -981,8 +983,6 @@ static void evaluate(VkExec *ex, const VkExecTarget *dst) {
     struct Size *e = size_for(cb, w, h, ow, oh);
     if (!e) return dl_fail("work image creation", 0);
     if (e != D.last) D.reset = 1, D.why[0]++, e->chars_ok = 0;   // another size's history is from another moment
-    if (!D.params && !NGX_OK(N.alloc_params(&D.params))) return dl_fail("parameter allocation", 0);
-    NgxParam *p = D.params;
     VkImageView zv = vk_exec_target_view(z->img, z->format, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, z->level,
                                          z->base_layer, 1, 0);
     float jx = D.jit_used ? D.ux : 0.0f, jy = D.jit_used ? D.uy : 0.0f;
@@ -998,12 +998,30 @@ static void evaluate(VkExec *ex, const VkExecTarget *dst) {
     }
     VkImageView cv = vk_exec_target_view(t->img, t->format, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, t->level,
                                          t->base_layer, 1, 0);
-    struct Snap *mk = D.mv_samp ? mask_pass(cb, cv, w, h) : NULL;
+    struct Snap *mk = !vk_xess_available() && D.mv_samp ? mask_pass(cb, cv, w, h) : NULL;
     int timed = T.on > 0 && T.used[T.slot];   // mv_pass began this frame's slot
     if (timed) times_mark(cb, T_DL0);
     uint64_t c0 = timed ? kern_now_ns() : 0;
     rec_drain();   // NGX records into the command buffer itself: the recorder thread must have made every call so far
     if (timed) T.cpu_drain += kern_now_ns() - c0;
+    if (D.last_color != t->image) D.reset = 1, D.why[2]++, D.last_color = t->image;
+    if (vk_xess_available()) {
+        xess_vk_execute_params_t frame = {
+            .colorTexture = {cv, t->image, {VK_IMAGE_ASPECT_COLOR_BIT, t->level, 1, t->base_layer, 1}, t->format, w, h},
+            .velocityTexture = {e->mv_view, e->mv, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}, VK_FORMAT_R16G16_SFLOAT, w, h},
+            .depthTexture = {zv, z->image, {VK_IMAGE_ASPECT_DEPTH_BIT, z->level, 1, z->base_layer, 1}, z->format, w, h},
+            .outputTexture = {e->out_view, e->out, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+                               VK_FORMAT_R16G16B16A16_SFLOAT, ow, oh},
+            .jitterOffsetX = jx, .jitterOffsetY = -jy, .exposureScale = 1.0f,  // Intel Vulkan sample's Y convention
+            .resetHistory = (uint32_t)D.reset, .inputWidth = w, .inputHeight = h};
+        c0 = timed ? kern_now_ns() : 0;
+        int ok = vk_xess_execute(cb, &frame);
+        if (timed) T.cpu_ngx += kern_now_ns() - c0;
+        if (!ok) return dl_fail("XeSS evaluation", 0);
+        goto sdk_done;
+    }
+    if (!D.params && !NGX_OK(N.alloc_params(&D.params))) return dl_fail("parameter allocation", 0);
+    NgxParam *p = D.params;
     if (!e->feat) {
         p_setu(p, "CreationNodeMask", 1);
         p_setu(p, "VisibilityNodeMask", 1);
@@ -1033,7 +1051,6 @@ static void evaluate(VkExec *ex, const VkExecTarget *dst) {
         rt_log("dlaa: DLSS feature created at %ux%u -> %ux%u, quality value %d, preset %c (scene format %d, depth format "
                "%d)", w, h, ow, oh, q, 'A' + pr - 1, (int)t->format, (int)z->format);
     }
-    if (D.last_color != t->image) D.reset = 1, D.why[2]++, D.last_color = t->image;
     NgxResourceVK rc = res_image(cv, t->image, t->format, w, h, VK_IMAGE_ASPECT_COLOR_BIT, 0);
     NgxResourceVK ro = res_image(e->out_view, e->out, VK_FORMAT_R16G16B16A16_SFLOAT, ow, oh, VK_IMAGE_ASPECT_COLOR_BIT, 1);
     NgxResourceVK rz = res_image(zv, z->image, z->format, w, h, VK_IMAGE_ASPECT_DEPTH_BIT, 0);
@@ -1069,7 +1086,9 @@ static void evaluate(VkExec *ex, const VkExecTarget *dst) {
     NgxResult r = N.evaluate(cb, e->feat, p, NULL);
     if (timed) T.cpu_ngx += kern_now_ns() - c0;
     if (!NGX_OK(r)) return dl_fail("DLSS evaluation", r);
+sdk_done:
     if (timed) times_mark(cb, T_DL1);   // through the recorder, after NGX's own commands
+    D.up = dst != t;
     D.reset = 0;
     D.last = e, e->used = D.evals + 1;
     full_barrier(cb);
@@ -1138,6 +1157,7 @@ void vk_dlaa_pass(VkExec *ex) {
         return;
     }
     if (!D.armed) return;
+    if (vk_xess_available() && !vk_xess_input_valid(D.color.width, D.color.height)) return;
     if (!D.ended) {
         if (!ex->pass_w || ex->pass_w * 4 > D.color.width) return;
         D.ended = 1;
@@ -1151,7 +1171,7 @@ void vk_dlaa_pass(VkExec *ex) {
     res_sizes(o, s);
     if (ex->pass_ncolor == 1 && c->image && !z->image && scene_color(c->format) && c->width > D.color.width &&
         c->width == o[0] && c->height == o[1] && c->samples <= 1 && !c->is3d) {
-        D.done = D.up = 1;
+        D.done = 1;
         evaluate(ex, c);
     }
 }
@@ -1159,6 +1179,17 @@ void vk_dlaa_pass(VkExec *ex) {
 // TOTK_DLSS, read at each present (the menu switches it live): the scene size of the mode (resolution.c) and the
 // texture bias that goes with it while DLSS runs.
 static void dlss_mode(void) {
+    if (vk_xess_wanted()) {
+        static int biased = -1;
+        int active = vk_xess_available() && !D.failed;
+        if (biased != active) {
+            unsigned out[2], scene[2];
+            res_sizes(out, scene);
+            vk_sampler_dlss_bias(active && scene[0] < out[0] ? (float)log2((double)scene[0] / out[0]) : 0.0f);
+            biased = active;
+        }
+        return;
+    }
     static char mode[32];
     static int bias_on = -1;
     const char *m = cfg_value("TOTK_DLSS");
@@ -1174,6 +1205,7 @@ static void dlss_mode(void) {
 
 // The preset, read again when a setting changed (the menu); a different one recreates the features at the next DLAA run.
 static void preset_check(void) {
+    if (vk_xess_wanted()) return;
     unsigned v = cfg_version();
     if (v == D.cfg_seen) return;
     D.cfg_seen = v;
@@ -1190,7 +1222,7 @@ void vk_dlaa_frame(void) {
     vk_dlaa_swap_img = NULL, vk_dlaa_swap_view = VK_NULL_HANDLE;
     dlss_mode();
     preset_check();
-    int on = N.available && cfg_bool("TOTK_DLAA");
+    int on = vk_xess_available() || (N.available && cfg_bool("TOTK_DLAA"));
     if (on != D.on) {
         rt_log("dlaa: %s", on ? "on" : "off");
         D.on = on;
@@ -1203,7 +1235,10 @@ void vk_dlaa_frame(void) {
     if (!D.done) D.frames_missed++;
     if (D.jit_used && !D.done) D.hold = 60, D.holds++;   // jittered but not resolved: that frame shook
     else if (D.hold) D.hold--;
-    if (!D.done) D.jit_ok = 0;
+    if (!D.done) {
+        D.jit_ok = 0;
+        if (vk_xess_available()) D.reset = 1, D.cam_prev_ok = 0;
+    }
     D.armed = D.done = D.jit_used = D.gbuf = D.ended = D.up = D.ids_ok = 0;
     D.cam_addr = 0;
 }
@@ -1257,7 +1292,8 @@ int vk_dlaa_skip_draw(VkExec *ex, const GfxShader *fs) {
                    "FXAA_FS): the FXAA stays on", (unsigned long long)fx_off_frames);
         }
     }
-    if (fxaa && !D.up) return 0;   // nothing to skip: no shader lookup per draw at the defaults
+    int fx_on = fxaa && !(vk_xess_available() && !D.failed && D.done);
+    if (fx_on && !D.up) return 0;   // nothing to skip: no shader lookup per draw at the defaults
     if (!fs) return 0;
     uint64_t h = spirv_hash(fs);
     int known = 0;
@@ -1268,6 +1304,6 @@ int vk_dlaa_skip_draw(VkExec *ex, const GfxShader *fs) {
         fx_found = 1;
         rt_log("dlaa: fxaa = 0 skips the game's FXAA (fragment shader %016llx)", (unsigned long long)h);
     }
-    return !fxaa;
+    return !fx_on;
 }
 

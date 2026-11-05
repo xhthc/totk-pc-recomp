@@ -22,6 +22,7 @@
 #include "nvn_api.h"
 #include "platform/platform.h"
 #include "vk.h"
+#include "vk_xess.h"
 #include "platform/platform.h"
 
 #define SYM_INIT_START "_ZN2nn4init5StartEmmPFvvES2_S2_"
@@ -355,6 +356,9 @@ void rt_boot(void) {
     uint64_t held = plat_now_ms();
     if (warm) plat_thread_join(warm);
     else vk_pipeline_prewarm();
+    // A screenshot run disables prewarm, but XeSS needs the device before the guest picks its scene size.
+    if (vk_xess_wanted() && (!rt_config()->gpu || strcmp(rt_config()->gpu, "null"))) vk_init();
+    vk_xess_prepare();
     held = plat_now_ms() - held;
     rt_log("boot: guest starts %llu ms after process start (%llu ms of it waiting for the prewarm)",
            (unsigned long long)(plat_process_uptime_ns() / 1000000), (unsigned long long)held);

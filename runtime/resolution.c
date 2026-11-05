@@ -40,6 +40,7 @@
 #include "cfg.h"
 #include "host.h"
 #include "platform/platform.h"
+#include "vk_xess.h"
 
 #define BASE_W 1920
 #define BASE_H 1080
@@ -103,7 +104,7 @@ static double dlss_share(const char *m) {
     static const struct { const char *name; double k; } dlss[] = {
         {"quality", 2.0 / 3.0}, {"balanced", 0.58}, {"performance", 0.5}, {"ultra_performance", 1.0 / 3.0}};
     static int dll = -1;
-    if (!cfg_bool("TOTK_DLAA")) return 0;
+    if (!cfg_bool("TOTK_DLAA") || vk_xess_wanted()) return 0;
     for (int i = 0; i < (int)(sizeof dlss / sizeof dlss[0]); i++)
         if (!strcmp(m, dlss[i].name)) {
             if (dll < 0 && !(dll = dlss_dll())) {
@@ -151,14 +152,17 @@ static void decide(void) {
     // for the largest scene the modes ask for. Everyone else keeps the game's own scene size and its dynamic resolution
     // unless render_scale or a DLSS mode asks for another, and a heap sized for that scene alone.
     R.base_k = k;
-    R.live = RT_V143 && cfg_bool("TOTK_DLAA") && dlss_dll();
+    R.live = RT_V143 && cfg_bool("TOTK_DLAA") && !vk_xess_wanted() && dlss_dll();
     const char *m = cfg_value("TOTK_DLSS");
     R.dlss_k = dlss_share(m);
     if (R.dlss_k) rt_log("resolution: DLSS %s: the scene at %.0f %% of the output (render_scale ignored)", m, R.dlss_k * 100);
     double sk = R.dlss_k ? R.dlss_k : k;
+    // The SDK picks the input size after the Vulkan prewarm. Reserve native-sized heaps now; no game thread runs yet.
+    if (vk_xess_wanted()) sk = 1.0, R.scene_set = 1;
     if (R.live || R.dlss_k || R.ow * sk > SCENE_MAX || R.oh * sk > SCENE_MAX) R.scene_set = 1;
     scene_for(sk, &R.sw, &R.sh);
-    if (R.live) scene_for(fmax(k, 2.0 / 3.0), &R.hw, &R.hh);
+    if (vk_xess_wanted()) scene_for(fmax(k, 1.0), &R.hw, &R.hh);
+    else if (R.live) scene_for(fmax(k, 2.0 / 3.0), &R.hw, &R.hh);
     else R.hw = R.sw, R.hh = R.sh;
     const char *sr = cfg_value("TOTK_SHADOW_RES");
     if (strcmp(sr, "game")) {
@@ -373,6 +377,19 @@ void res_init(void) {
 
 // DLSS upscaling: textures are sampled for the output's resolution, not the scene's (NVIDIA's DLSS guide: a mip bias
 // of log2(render / output)), so their detail survives the scaling. 0 without a DLSS mode.
+int res_xess_scene(unsigned w, unsigned h) {
+    decide();
+    if (!R.on) return 0;
+    if (!w && !h) scene_for(R.base_k, &w, &h);
+    if (!w || !h || w > R.hw || h > R.hh) return 0;
+    double k = RT_V143 ? (double)R.ow / BASE_W : 1.0;
+    float sc[2] = {(float)(w / k), (float)(h / k)};
+    memcpy((uint8_t *)rt_patch_page() + 16, sc, sizeof sc);
+    R.sw = w, R.sh = h;
+    rt_log("resolution: XeSS startup scene %ux%u, output %ux%u", w, h, R.ow, R.oh);
+    return 1;
+}
+
 float res_dlss_lod_bias(void) {
     decide();
     return R.dlss_k ? (float)log2(R.dlss_k) : 0.0f;

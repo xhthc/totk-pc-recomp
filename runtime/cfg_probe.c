@@ -28,6 +28,7 @@ int probe_cfg(void) {
         "  fps60 = 0  \r\n"
         "Realtime=0\r\n"
         "[Display]\r\n"
+        "xess = quality\r\n"
         "GPU_name = \"My GPU 1\"\r\n"
         "TOTK_Locale = de-DE\r\n"
         "lang =\r\n"
@@ -43,6 +44,7 @@ int probe_cfg(void) {
     CHECK(EQ(cfg_get("TOTK_FPS60"), "0"), "value read, whitespace trimmed, lower-case key");
     CHECK(EQ(cfg_get("TOTK_REALTIME"), "0"), "key without spaces, mixed case");
     CHECK(EQ(cfg_get("TOTK_GPU_NAME"), "My GPU 1"), "quoted value, section ignored");
+    CHECK(EQ(cfg_value("TOTK_XESS"), "quality"), "XeSS mode read from the display settings");
     CHECK(EQ(cfg_get("TOTK_LOCALE"), "de-DE"), "TOTK_ prefix accepted in the file");
     CHECK(cfg_get("TOTK_LANG") == NULL, "empty value is unset");
     CHECK(EQ(cfg_get("TOTK_TRACE"), "b"), "later line wins");
@@ -56,6 +58,7 @@ int probe_cfg(void) {
     plat_file_delete(path);
     CHECK(cfg_load(path) == 0, "missing file is not an error");
     CHECK(cfg_get("TOTK_FPS60") == NULL, "missing file leaves no keys");
+    CHECK(EQ(cfg_value("TOTK_XESS"), "off") && !cfg_meta("XESS")->live, "XeSS is off by default and needs a restart");
 
     // cfg_set / cfg_save: only changed lines move, comments stay, a missing key goes under its section
     static const char before[] =
